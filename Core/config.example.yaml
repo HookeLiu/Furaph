@@ -1,0 +1,137 @@
+# 复制为 config.yaml 并通过环境变量注入密钥。
+# 本文件不得填入真实 token / api_key。
+#
+# 启动：设置 FURAPH_GATEWAY_CONFIG=./config.yaml
+#   或：python -m furaph_core.gateway --config ./config.yaml
+
+server:
+  # MVP 临时强制 loopback（127.0.0.1 / localhost / ::1）；LAN 待中间件后开放
+  host: "127.0.0.1"
+  port: 8788
+  gateway_token: "${FURAPH_GATEWAY_TOKEN}"
+  # admin_token: "${FURAPH_ADMIN_TOKEN}"   # 可选；缺省时 /cmd 仅 loopback 访问（启动打 Warning）
+  instance_id: "home-relay-1"              # 必填：首次启动前人工填写，中继实例身份
+  allow_lan: false
+  allowed_networks:
+    - "127.0.0.0/8"
+    # - "192.168.1.0/24"
+    # - "::1/128"
+  allowed_hosts:
+    - "127.0.0.1"
+    - "localhost"
+    # - "192.168.1.1"
+
+database:
+  path: "data/gateway.db"
+  wal: true
+
+network:
+  trust_env: false
+  verify_ssl: true
+
+  # 全局默认出站出口（per-provider 可覆盖）。空 urls = 直连。
+  default_proxy:
+    urls: []                 # 优先级递减的代理列表；如 ["socks5://127.0.0.1:10808"]
+    required: false          # true=必须代理(fail-closed)；false=可选(降级直连须显式告警)
+
+  connect_timeout: 10        # 秒，TCP/TLS 建连
+  read_timeout: 300          # 秒，读超时（LLM 流式长请求需大值）
+  write_timeout: 60
+
+  pool:
+    max_connections: 100     # 每出口连接池上限
+    max_keepalive: 20        # keep-alive 空闲连接数
+    pool_timeout: 5.0        # 等待连接池可用连接的秒数（Timeout.pool）
+
+  health_check:
+    enabled: true
+    interval_sec: 60         # 探测周期（主动探测后置；当前为反应式 failover）
+    target: ""               # 空 = 用各 provider base_url
+    fail_threshold: 3        # 连续失败 N 次 → 标记 unhealthy
+    recovery_sec: 60         # unhealthy 后恢复探测间隔
+
+# providers 示例（per-provider 出口覆盖）：
+# providers:
+#   openrouter:
+#     base_url: "https://openrouter.ai/api/v1"
+#     api_key: "${OPENROUTER_API_KEY}"
+#     currency: "USD"
+#     proxy:
+#       urls: ["socks5://127.0.0.1:10808"]
+#       required: true       # 国内直连不可靠，代理挂了宁可 fail-closed
+
+pricing:
+  default_currency: "CNY"
+  # C-005 MVP：扁平文本价；单位固定为 currency / 每 1,000,000 tokens
+  # 多模态 image/audio 价表推迟下一阶段；禁止嵌套 text.input
+  price_overrides: {}
+  # 示例：
+  # price_overrides:
+  #   "deepseek-v4-flash":
+  #     currency: CNY
+  #     unit: per_1m_tokens   # 可省略，默认即此
+  #     input: 1.0            # 每 1M prompt tokens（非 cache 部分）
+  #     output: 2.0           # 每 1M completion tokens
+  #     cache_read: 0.1       # 可选；每 1M cache_read tokens
+  openrouter_cache:
+    enabled: true
+    refresh_interval_hours: 24
+    min_refresh_interval_seconds: 180  # force 也不能绕过的最小冷却
+    cache_file: "data/pricing_cache.json"
+    # 同时作为 cache_stale 的最大保留期限；不另设 stale_grace_days。
+    smooth_window_days: 3   # N 日递推滤波平滑窗口（C-009，狐狐拍板默认 3）
+
+routing:
+  # C-006：顺序匹配规则列表；* 匹配「除 / 之外的一个或多个可打印字符」；
+  # 未知模型直接拒绝（fail-closed，避免请求误发给其他服务商）；pricing 仍精确。
+  rules: []
+  # 示例：
+  # rules:
+  #   - provider: "volcengine"
+  #     patterns: ["doubao-s*"]
+  #   - provider: "deepseek"
+  #     patterns: ["deepseek-v4-*"]
+  #   - provider: "openrouter"
+  #     patterns: ["*/*"]
+
+# 示例:
+# providers:
+#   deepseek:
+#     base_url: "https://api.deepseek.com"   # 上游地址须 https（非 listen host）
+#     api_key: "${DEEPSEEK_API_KEY}"
+#     currency: "CNY"
+providers: {}
+
+budget:
+  enabled: true
+  on_exceed: "reject"
+  # period:
+  #   monthly — 按 timezone 自然月统计 used，月界自动新窗口（无需改 limits/重启）
+  #   none    — 全历史累计（超限后只能调高 limits 或清库，不推荐日常使用）
+  # 后续 P1：weekly / 自定义 period_start
+  period: monthly
+  timezone: "Asia/Shanghai"
+  # 空 limits = 不执行拦截；配置后「当前 period 内」used(currency) >= limit → 402
+  limits: {}
+  # limits:
+  #   CNY: 100.0
+  #   USD: 20.0
+
+logging:
+  enabled: true
+  dir: "data/logs"
+  level: "INFO"
+  # 明文日志保留天数；超过 archive_after_days 的 gateway_YYYY-MM-DD.log → archive/*.zip
+  retention_days: 3
+  archive_after_days: 3
+  # zip 归档再保留天数
+  archive_retention_days: 90
+
+watermark:
+  # C-004：附加响应字段 furaph（结构化）；不写 assistant 正文
+  enabled: true
+  mode: "structured_field"
+
+# 运维指令（鉴权后）：
+#   POST /cmd   body: "shutdown"  或  {"cmd":"shutdown"}
+#   语义：指令字符串分发；MVP 含 shutdown（SIGTERM 优雅退出进程）

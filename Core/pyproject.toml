@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "furaph-core"
+version = "0.0.1"
+description = "Furaph core runtime: audited LLM gateway and agent substrate"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0,<1",
+  "uvicorn>=0.32.0,<1",
+  "httpx[socks]>=0.27.0,<1",
+  "pydantic>=2.7.0,<3",
+  "PyYAML>=6.0.1,<7",
+  "loguru>=0.7.2,<1",
+  "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0,<9",
+  "pytest-asyncio>=0.24.0,<1",
+]
+
+[project.scripts]
+furaph-gateway = "furaph_core.gateway.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+filterwarnings = [
+    # Third-party deprecations (pytest-asyncio's event-loop-policy helpers,
+    # Starlette's TestClient+httpx, and websockets/uvicorn legacy imports)
+    # cannot be fixed in-tree; silence them so the suite is clean and
+    # reproducible without setting PYTHONPATH manually.
+    "ignore:.*asyncio.*event_loop_policy.*deprecated.*:DeprecationWarning:pytest_asyncio.*",
+    "ignore:.*httpx.*with.*starlette.testclient.*deprecated.*::fastapi.testclient",
+    "ignore:websockets.legacy is deprecated.*::websockets.legacy",
+    "ignore:websockets.server.WebSocketServerProtocol is deprecated::uvicorn.protocols.websockets.websockets_impl",
+]

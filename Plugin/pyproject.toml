@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "furaph_plugin"
+version = "0.1.0"
+description = "Furaph 的扩展与外部协议适配层：插件不绕过 Core 的信任边界、计费和审计链路。"
+requires-python = ">=3.12"
+readme = "README.md"
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
